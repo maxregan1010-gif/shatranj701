@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>شطِ چه رنجی آخه بِرادِر</title>
+<style>
+body{background:#222;color:white;text-align:center;font-family:tahoma}
+#board{width:480px;height:480px;margin:20px auto;display:grid;grid-template-columns:repeat(8,1fr);border:4px solid #555}
+.cell{width:60px;height:60px;display:flex;align-items:center;justify-content:center;font-size:16px; color:#000}
+.light{background:#f0d9b5;color:#111}.dark{background:#b58863}
+.move{box-shadow:inset 0 0 0 5px #00aaff}
+.sel{outline:4px solid #00ff55}
+</style>
+</head>
+<body>
+<h2>قربانی رفیق روز تنگم</h2>
+<p>اون مهره هایی ای که . دارن مال ربات هستند
+    یه دفعه کصخل بازی درنیاری!
+</p>
+<div id="board"></div>
+<div id="msg"></div>
+
+<script>
+const ico={w:{p:"کیرِ سرباز",r:"قلعه کص مادر",n:"اسب کیری",b:"فیل جقی",q:"وزیر کونی",k:"شاه کص"},
+b:{p:"کیرِ سرباز.",r:"قلعه کص مادر.",n:"اسب کیری.",b:"فیل جقی.",q:"وزیر کونی.",k:"شاه کص."}};
+
+let B=[
+["br","bn","bb","bq","bk","bb","bn","br"],
+["bp","bp","bp","bp","bp","bp","bp","bp"],
+["","","","","","","",""],
+["","","","","","","",""],
+["","","","","","","",""],
+["","","","","","","",""],
+["wp","wp","wp","wp","wp","wp","wp","wp"],
+["wr","wn","wb","wq","wk","wb","wn","wr"]];
+
+let turn="w",sel=null;
+
+function inside(r,c){return r>=0&&r<8&&c>=0&&c<8}
+function col(p){return p?p[0]:""}
+
+function rawMoves(r,c){
+let p=B[r][c],out=[];
+if(!p)return out;
+let t=p[1],cl=p[0];
+let add=(a,b)=>{if(inside(a,b)&&col(B[a][b])!=cl)out.push([a,b])};
+
+if(t=="p"){
+let d=cl=="w"?-1:1;
+let start = cl=="w"?6:1;
+if(inside(r+d,c)&&!B[r+d][c]) {
+out.push([r+d,c]);
+if(r==start && !B[r+2*d][c]) out.push([r+2*d,c]);
+}
+for(let x of [-1,1])
+if(inside(r+d,c+x)&&col(B[r+d][c+x])&&col(B[r+d][c+x])!=cl)
+out.push([r+d,c+x]);
+}
+
+if(t=="n") for(let x of [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]])add(r+x[0],c+x[1]);
+
+if(t=="k") for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)if(i||j)add(r+i,c+j);
+
+if(t=="r"||t=="b"||t=="q"){
+let d=[];
+if(t!="b")d=[[1,0],[-1,0],[0,1],[0,-1]];
+if(t!="r")d.push([1,1],[1,-1],[-1,1],[-1,-1]);
+for(let x of d){
+let a=r+x[0],b=c+x[1];
+while(inside(a,b)){
+if(!B[a][b])out.push([a,b]);
+else{add(a,b);break}
+a+=x[0];b+=x[1];
+}}
+}
+return out;
+}
+
+function copy(){return JSON.parse(JSON.stringify(B));}
+
+function kingSafe(color){
+let kr,kc;
+for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+if(B[r][c]==color+"k"){kr=r;kc=c}
+let enemy=color=="w"?"b":"w";
+for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+if(col(B[r][c])==enemy)
+if(rawMoves(r,c).some(m=>m[0]==kr&&m[1]==kc))return false;
+return true;
+}
+
+function legal(r,c){
+return rawMoves(r,c).filter(m=>{
+let old=copy();
+B[m[0]][m[1]]=B[r][c];B[r][c]="";
+let ok=kingSafe(col(B[m[0]][m[1]]));
+B=old;return ok;
+});
+}
+
+function draw(){
+let e=document.getElementById("board");e.innerHTML="";
+for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+let d=document.createElement("div");
+d.className="cell "+((r+c)%2?"dark":"light");
+if(sel&&sel[0]==r&&sel[1]==c)d.classList.add("sel");
+if(sel&&legal(sel[0],sel[1]).some(x=>x[0]==r&&x[1]==c))d.classList.add("move");
+let p=B[r][c]; if(p)d.innerHTML=ico[p[0]][p[1]];
+d.onclick=()=>click(r,c);e.appendChild(d);
+}}
+
+function click(r,c){
+if(turn!="w")return;
+if(sel){
+if(legal(sel[0],sel[1]).some(x=>x[0]==r&&x[1]==c)){
+B[r][c]=B[sel[0]][sel[1]];B[sel[0]][sel[1]]="";
+sel=null;turn="b";draw();setTimeout(bot,500);return;
+}}
+if(col(B[r][c])=="w")sel=[r,c];
+draw();
+}
+
+function bot(){
+let moves=[];
+for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+if(col(B[r][c])=="b")
+for(let m of legal(r,c))moves.push([r,c,m[0],m[1]]);
+if(moves.length){
+let m=moves[Math.floor(Math.random()*moves.length)];
+B[m[2]][m[3]]=B[m[0]][m[1]];
+B[m[0]][m[1]]="";
+}
+turn="w";
+draw();
+}
+
+draw();
+</script>
+</body>
+</html>

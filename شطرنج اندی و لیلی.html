@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <title>شطرنج اندی و لیلی باشد!؟
+    </title>
+    <style>
+        body {
+            background: #222;
+            color: white;
+            text-align: center;
+            font-family: tahoma
+        }
+
+        #board {
+            width: 480px;
+            height: 480px;
+            margin: 20px auto;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            border: 4px solid #555
+        }
+
+        .cell {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: #000
+        }
+
+        .light {
+            background: #f0d9b5;
+            color: #111
+        }
+
+        .dark {
+            background: #b58863
+        }
+
+        .move {
+            box-shadow: inset 0 0 0 5px #00aaff
+        }
+
+        .sel {
+            outline: 4px solid #00ff55
+        }
+    </style>
+</head>
+
+<body>
+    <h2>بانو فاکس از بازی با تو لذت میبره</h2>
+    <div id="board"></div>
+    <div id="msg"></div>
+
+    <script>
+        const ico = {
+            w: { p: "سوئیتی ممد", r: "بچه کونی محله", n: "اسب شومبول طلا", b: "اندی عاج دراز", q: "وزارت بانو اشلی", k: "ملکه فاکسی جون" },
+            b: { p: "سرباز", r: "قلعه", n: "اسب", b: "فیل", q: "وزیر", k: "شاه" }
+        };
+
+        let B = [
+            ["br", "bn", "bb", "bq", "bk", "bb", "bn", "br"],
+            ["bp", "bp", "bp", "bp", "bp", "bp", "bp", "bp"],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["wp", "wp", "wp", "wp", "wp", "wp", "wp", "wp"],
+            ["wr", "wn", "wb", "wq", "wk", "wb", "wn", "wr"]];
+
+        let turn = "w", sel = null;
+        let gameOver = false;
+
+        // مهره‌های خورده شده
+        let captured = {
+            w: [],
+            b: []
+        };
+
+        function inside(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8 }
+        function col(p) { return p ? p[0] : "" }
+
+        function rawMoves(r, c) {
+            let p = B[r][c], out = [];
+            if (!p) return out;
+            let t = p[1], cl = p[0];
+            let add = (a, b) => { if (inside(a, b) && col(B[a][b]) != cl) out.push([a, b]) };
+
+            if (t == "p") {
+                let d = cl == "w" ? -1 : 1;
+                let start = cl == "w" ? 6 : 1;
+                if (inside(r + d, c) && !B[r + d][c]) {
+                    out.push([r + d, c]);
+                    if (r == start && !B[r + 2 * d][c]) out.push([r + 2 * d, c]);
+                }
+                for (let x of [-1, 1])
+                    if (inside(r + d, c + x) && col(B[r + d][c + x]) && col(B[r + d][c + x]) != cl)
+                        out.push([r + d, c + x]);
+            }
+
+            if (t == "n") for (let x of [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]]) add(r + x[0], c + x[1]);
+
+            if (t == "k") for (let i = -1; i <= 1; i++)for (let j = -1; j <= 1; j++)if (i || j) add(r + i, c + j);
+
+            if (t == "r" || t == "b" || t == "q") {
+                let d = [];
+                if (t != "b") d = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+                if (t != "r") d.push([1, 1], [1, -1], [-1, 1], [-1, -1]);
+                for (let x of d) {
+                    let a = r + x[0], b = c + x[1];
+                    while (inside(a, b)) {
+                        if (!B[a][b]) out.push([a, b]);
+                        else { add(a, b); break }
+                        a += x[0]; b += x[1];
+                    }
+                }
+            }
+            return out;
+        }
+
+        function copy() { return JSON.parse(JSON.stringify(B)); }
+
+        // =========================
+        // انجام حرکت
+        // =========================
+
+        function makeMove(move, realMove = false) {
+
+            let capturedPiece = B[move.tr][move.tc];
+
+            if (realMove && capturedPiece) {
+
+                captured[capturedPiece[0]].push(capturedPiece);
+
+            }
+
+            B[move.tr][move.tc] = B[move.fr][move.fc];
+            B[move.fr][move.fc] = "";
+
+            return capturedPiece;
+
+        }
+        // =========================
+        // برگرداندن حرکت
+        // =========================
+
+        function undoMove(move, capturedPiece, realMove = false) {
+
+            B[move.fr][move.fc] = B[move.tr][move.tc];
+            B[move.tr][move.tc] = capturedPiece;
+
+            if (realMove && capturedPiece) {
+
+                captured[capturedPiece[0]].pop();
+
+            }
+
+        }
+
+        // =========================
+        // ارزش مهره ها
+        // =========================
+
+        const pieceValue = {
+            p: 100,
+            n: 320,
+            b: 330,
+            r: 500,
+            q: 900,
+            k: 20000
+        };
+
+        // =========================
+        // ارزیابی صفحه
+        // مثبت = به نفع سیاه
+        // منفی = به نفع سفید
+        // =========================
+
+        function evaluateBoard() {
+
+            let score = 0;
+
+            for (let r = 0; r < 8; r++) {
+
+                for (let c = 0; c < 8; c++) {
+
+                    let p = B[r][c];
+
+                    if (!p) continue;
+
+                    let value = pieceValue[p[1]];
+
+                    if (p[0] == "b")
+                        score += value;
+                    else
+                        score -= value;
+
+                }
+
+            }
+
+            return score;
+
+        }
+
+        // =========================
+        // گرفتن تمام حرکت های قانونی
+        // =========================
+
+        function getAllMoves(color) {
+
+            let moves = [];
+
+            for (let r = 0; r < 8; r++) {
+
+                for (let c = 0; c < 8; c++) {
+
+                    if (col(B[r][c]) != color) continue;
+
+                    let legalMoves = legal(r, c);
+
+                    for (let m of legalMoves) {
+
+                        moves.push({
+
+                            fr: r,
+                            fc: c,
+                            tr: m[0],
+                            tc: m[1]
+
+                        });
+
+                    }
+
+                }
+
+            }
+
+            return moves;
+
+        }
+
+        function kingSafe(color) {
+            let kr, kc;
+            for (let r = 0; r < 8; r++)for (let c = 0; c < 8; c++)
+                if (B[r][c] == color + "k") { kr = r; kc = c }
+            let enemy = color == "w" ? "b" : "w";
+            for (let r = 0; r < 8; r++)for (let c = 0; c < 8; c++)
+                if (col(B[r][c]) == enemy)
+                    if (rawMoves(r, c).some(m => m[0] == kr && m[1] == kc)) return false;
+            return true;
+        }
+
+        function legal(r, c) {
+            return rawMoves(r, c).filter(m => {
+                let old = copy();
+                B[m[0]][m[1]] = B[r][c]; B[r][c] = "";
+                let ok = kingSafe(col(B[m[0]][m[1]]));
+                B = old; return ok;
+            });
+        }
+
+        // =========================
+        // آیا رنگ مورد نظر کیش است؟
+        // =========================
+
+        function isCheck(color) {
+
+            return !kingSafe(color);
+
+        }
+
+        // =========================
+        // آیا این رنگ هیچ حرکت قانونی دارد؟
+        // =========================
+
+        function hasLegalMove(color) {
+
+            for (let r = 0; r < 8; r++) {
+
+                for (let c = 0; c < 8; c++) {
+
+                    if (col(B[r][c]) != color)
+                        continue;
+
+                    if (legal(r, c).length > 0)
+                        return true;
+
+                }
+
+            }
+
+            return false;
+
+        }
+
+        // =========================
+        // بررسی پایان بازی
+        // =========================
+
+        function gameState() {
+
+            // شاه سفید
+
+            if (isCheck("w")) {
+
+                if (!hasLegalMove("w"))
+                    return "blackWin";
+
+            }
+
+            // شاه سیاه
+
+            if (isCheck("b")) {
+
+                if (!hasLegalMove("b"))
+                    return "whiteWin";
+
+            }
+
+            // پات سفید
+
+            if (!isCheck("w")) {
+
+                if (!hasLegalMove("w"))
+                    return "stalemate";
+
+            }
+
+            // پات سیاه
+
+            if (!isCheck("b")) {
+
+                if (!hasLegalMove("b"))
+                    return "stalemate";
+
+            }
+
+            return "";
+        }
+
+        function draw() {
+            let e = document.getElementById("board"); e.innerHTML = "";
+            for (let r = 0; r < 8; r++)for (let c = 0; c < 8; c++) {
+                let d = document.createElement("div");
+                d.className = "cell " + ((r + c) % 2 ? "dark" : "light");
+                if (sel && sel[0] == r && sel[1] == c) d.classList.add("sel");
+                if (sel && legal(sel[0], sel[1]).some(x => x[0] == r && x[1] == c)) d.classList.add("move");
+                let p = B[r][c]; if (p) d.innerHTML = ico[p[0]][p[1]];
+                d.onclick = () => click(r, c); e.appendChild(d);
+            }
+        }
+
+        function click(r, c) {
+            if (gameOver)
+                return;
+            if (turn != "w")
+                return;
+            if (sel) {
+                if (legal(sel[0], sel[1]).some(x => x[0] == r && x[1] == c)) {
+                    makeMove({
+                        fr: sel[0],
+                        fc: sel[1],
+                        tr: r,
+                        tc: c
+                    }, true);
+                    sel = null;
+
+                    draw();
+
+                    let state = gameState();
+
+                    if (state == "whiteMate") {
+
+                        gameOver = true;
+
+                        alert("🎉تبریک میگم سفیدیت اثر کرد(کیش مات)")
+
+                        return;
+
+                    }
+
+                    if (state == "blackMate") {
+
+                        gameOver = true;
+
+                        alert("💀چی شد اُزگَل(کیش مات)")
+
+                        return;
+
+                    }
+
+                    if (state == "stalemate") {
+
+                        gameOver = true;
+
+                        alert("مساوی کردی شیطون بلا")
+
+                        return;
+
+                    }
+
+                    turn = "b";
+
+                    setTimeout(bot, 500);
+
+                    return;
+                }
+            }
+            if (col(B[r][c]) == "w") sel = [r, c];
+            draw();
+        }
+
+        // =========================
+        // Minimax
+        // =========================
+
+        function minimax(depth, maxPlayer) {
+
+            if (depth == 0)
+                return evaluateBoard();
+
+            let color = maxPlayer ? "b" : "w";
+
+            let moves = getAllMoves(color);
+
+            if (moves.length == 0)
+                return evaluateBoard();
+
+            if (maxPlayer) {
+
+                let best = -999999;
+
+                for (let move of moves) {
+
+                    let captured = makeMove(move, false);
+
+                    let score = minimax(depth - 1, false);
+
+                    undoMove(move, captured);
+
+                    if (score > best)
+                        best = score;
+
+                }
+
+                return best;
+
+            }
+            else {
+
+                let best = 999999;
+
+                for (let move of moves) {
+
+                    let captured = makeMove(move, false);
+
+                    let score = minimax(depth - 1, true);
+
+                    undoMove(move, captured);
+
+                    if (score < best)
+                        best = score;
+
+                }
+
+                return best;
+
+            }
+
+        }
+
+        // =========================
+        // پیدا کردن بهترین حرکت
+        // =========================
+
+        function bestMove() {
+
+            let bestScore = -999999;
+
+            let best = null;
+
+            let moves = getAllMoves("b");
+
+            for (let move of moves) {
+
+                let captured = makeMove(move, false);
+
+                let score = minimax(2, false);
+
+                undoMove(move, captured);
+
+                if (score > bestScore) {
+
+                    bestScore = score;
+
+                    best = move;
+
+                }
+
+            }
+
+            return best;
+
+        }
+
+        function bot() {
+
+            if (gameOver)
+                return;
+
+            let move = bestMove();
+
+            if (move) {
+
+                makeMove(move, true);
+
+            }
+
+            draw();
+
+            let state = gameState();
+
+            if (state == "whiteMate") {
+
+                gameOver = true;
+
+                alert("🎉تبریک میگم سفیدیت اثر کرد(کیش مات)")
+                return;
+
+            }
+
+            if (state == "blackMate") {
+
+                gameOver = true;
+
+                alert("💀چی شد اُزگَل(کیش مات)")
+
+                return;
+
+            }
+
+            if (state == "stalemate") {
+
+                gameOver = true;
+
+                alert("مساوی کردی شیطون بلا")
+
+                return;
+
+            }
+
+            turn = "w";
+            draw();
+
+        }
+
+        draw();
+    </script>
+</body>
+
+</html>
